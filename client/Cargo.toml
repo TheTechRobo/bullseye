@@ -1,0 +1,23 @@
+[package]
+name = "bullseye-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.91"
+async-stream = "0.3.6"
+bytes = "1.8.0"
+clap = { version = "4.5.20", features = ["derive"] }
+common = { version = "0.1.0", path = "../common" }
+futures-util = "0.3.31"
+indicatif = "0.17.8"
+kdam = { version = "0.5.2", features = ["rich", "spinner"] }
+reqwest = { version = "0.12.8", features = ["json", "stream"] }
+serde = "1.0.210"
+serde_json = "1.0.132"
+tokio = { version = "1.41.0", features = ["full", "rt"] }
+tokio-util = "0.7.12"
+url = "2.5.2"
+
+[profile.dev]
+opt-level = 1
