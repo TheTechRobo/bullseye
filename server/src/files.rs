@@ -29,10 +29,14 @@ async fn get_file(id: &str) -> io::Result<File> {
 }
 
 pub async fn new_file(id: &str, with_size: u64) -> io::Result<()> {
+    let with_size: i64 = match with_size.try_into() {
+        Ok(s) => s,
+        Err(_) => return Err(io::Error::other("File too large")),
+    };
     let path = get_path(id);
     let file = File::create_new(&path).await?;
     let fd = file.as_fd().as_raw_fd();
-    match spawn_blocking(move || posix_fallocate(fd, 0, with_size as i64)).await? {
+    match spawn_blocking(move || posix_fallocate(fd, 0, with_size)).await? {
         Ok(()) => io::Result::Ok(()),
         Err(e) => {
             remove_file(path).await?;
