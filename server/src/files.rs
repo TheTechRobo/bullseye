@@ -13,27 +13,20 @@ use tokio::{
     task::spawn_blocking,
 };
 
-const DATA_DIR: &str = "data";
-
-fn get_path(id: &str) -> PathBuf {
-    let path: PathBuf = [DATA_DIR, id].iter().collect();
-    path
-}
-
-async fn get_file(id: &str) -> io::Result<File> {
+async fn get_file(path: &str) -> io::Result<File> {
     File::options()
         .read(true)
         .write(true)
-        .open(get_path(id))
+        .open(path)
         .await
 }
 
-pub async fn new_file(id: &str, with_size: u64) -> io::Result<()> {
+pub async fn new_file(mut path: PathBuf, id: &str, with_size: u64) -> io::Result<()> {
     let with_size: i64 = match with_size.try_into() {
         Ok(s) => s,
         Err(_) => return Err(io::Error::other("File too large")),
     };
-    let path = get_path(id);
+    path.push(id);
     let file = File::create_new(&path).await?;
     let fd = file.as_fd().as_raw_fd();
     match spawn_blocking(move || posix_fallocate(fd, 0, with_size)).await? {
@@ -46,12 +39,14 @@ pub async fn new_file(id: &str, with_size: u64) -> io::Result<()> {
 }
 
 pub async fn write_to_file(
+    mut dir: PathBuf,
     id: &str,
     size: u64,
     offset: u64,
     mut body: web::Payload,
 ) -> io::Result<()> {
-    let mut file = get_file(id).await?;
+    dir.push(id);
+    let mut file = get_file(dir.to_str().unwrap()).await?;
     file.seek(io::SeekFrom::Start(offset)).await?;
     while let Some(chunk) = body.next().await {
         if let Ok(chunk) = chunk {

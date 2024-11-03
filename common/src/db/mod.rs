@@ -53,6 +53,7 @@ impl UploadRow {
 
     pub async fn new(
         conn: &DatabaseHandle,
+        dir: String,
         id: String,
         file: File,
         pipeline: String,
@@ -61,6 +62,7 @@ impl UploadRow {
     ) -> Result<Self, DbError> {
         let s = Self {
             id,
+            dir,
             file,
             pipeline,
             project,
@@ -154,7 +156,7 @@ impl UploadRow {
             .get(self.id.clone())
             .update(rjson!({
                 "writing": r.row().g("writing").add(1),
-                "last_acivity": now
+                "last_activity": now
             }))
             .exec(&conn.pool)
             .await;

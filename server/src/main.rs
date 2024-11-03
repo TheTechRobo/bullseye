@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, path::PathBuf};
 
 use actix_web::{get, post, put, web::{self, Bytes}, App, HttpRequest, HttpResponse, HttpServer, Responder};
 
@@ -20,18 +20,19 @@ type NewUploadResp = ErrorablePayload<NewUploadResponse>;
 
 #[post("/upload")]
 async fn new_upload(
-    conn: web::Data<DatabaseHandle>,
+    conn: web::Data<SharedCtx>,
     req: HttpRequest,
     pdetails: web::Json<UploadInitialisationPayload>,
 ) -> impl Responder {
     let id = uuidv7::create();
     let details = pdetails.clone();
-    if let io::Result::Err(e) = files::new_file(&id, details.file.size).await {
+    if let io::Result::Err(e) = files::new_file(conn.cwd.clone(), &id, details.file.size).await {
         dbg!(e);
         return NewUploadResp::Err("I/O error".to_string()).to_response(HttpResponse::Created());
     }
     let res = UploadRow::new(
-        &conn,
+        &conn.pool,
+        conn.cwd.to_str().unwrap().to_string(),
         id,
         details.file,
         details.pipeline,
@@ -60,9 +61,9 @@ async fn new_upload(
 type GetUploadResp = ErrorablePayload<SingleUploadResponse>;
 
 #[get("/upload/{uuid}")]
-async fn get_upload(conn: web::Data<DatabaseHandle>, path: web::Path<String>) -> impl Responder {
+async fn get_upload(conn: web::Data<SharedCtx>, path: web::Path<String>) -> impl Responder {
     let uuid = path.into_inner();
-    let upload = UploadRow::from_database(conn.get_ref(), uuid).await;
+    let upload = UploadRow::from_database(&conn.pool, uuid).await;
     match upload {
         Ok(payload) => GetUploadResp::Ok(payload),
         Err(e) => GetUploadResp::from(e),
@@ -80,43 +81,43 @@ struct UploadChunkQueryString {
 #[put("/upload/{uuid}/data")]
 async fn put_upload_chunk(
     body: web::Payload,
-    conn: web::Data<DatabaseHandle>,
+    conn: web::Data<SharedCtx>,
     path: web::Path<String>,
     qs: web::Query<UploadChunkQueryString>,
 ) -> impl Responder {
     let uuid = path.into_inner();
     let offset = qs.into_inner().offset;
-    let row = UploadRow::from_database(&conn, uuid).await;
+    let row = UploadRow::from_database(&conn.pool, uuid).await;
     let mut res = UploadChunkResp::Ok(());
     if let Ok(mut row) = row {
         if row.status() != status::UPLOADING {
             res = UploadChunkResp::Err("Item is not in the UPLOADING status".to_string());
         } else if offset > row.size() {
             res = UploadChunkResp::Err("Offset too large".to_string());
-        } else if let Err(e) = row.enter(&conn).await {
+        } else if let Err(e) = row.enter(&conn.pool).await {
             res = UploadChunkResp::from(e);
         } else {
-            let r = files::write_to_file(row.id(), row.size(), offset, body).await;
+            let r = files::write_to_file(conn.cwd.clone(), row.id(), row.size(), offset, body).await;
             if let Err(e) = r {
                 dbg!(e);
                 res = UploadChunkResp::Err("I/O error".to_string());
             }
-            let _ = row.exit(&conn).await; // not much we can do if this fails
+            let _ = row.exit(&conn.pool).await; // not much we can do if this fails
         }
     }
     res.to_response(HttpResponse::Created())
 }
 
 #[get("/upload/{uuid}/events")]
-async fn upload_subscribe(conn: web::Data<DatabaseHandle>, path: web::Path<String>) -> impl Responder {
+async fn upload_subscribe(conn: web::Data<SharedCtx>, path: web::Path<String>) -> impl Responder {
     let uuid = path.into_inner();
     let conn = conn.into_inner();
-    let row = UploadRow::from_database(&conn, uuid).await;
+    let row = UploadRow::from_database(&conn.pool, uuid).await;
     match row {
         Ok(mut row) => {
             HttpResponse::Ok()
                 .streaming(stream! {
-                    let iter = row.stream_status_changes(&conn);
+                    let iter = row.stream_status_changes(&conn.pool);
                     pin_mut!(iter);
                     while let Some(change) = iter.next().await {
                         let event = UploadEvent::StatusChange(change);
@@ -137,12 +138,12 @@ async fn upload_subscribe(conn: web::Data<DatabaseHandle>, path: web::Path<Strin
 }
 
 #[post("/upload/{uuid}/finish")]
-async fn upload_finish(conn: web::Data<DatabaseHandle>, path: web::Path<String>) -> impl Responder {
+async fn upload_finish(conn: web::Data<SharedCtx>, path: web::Path<String>) -> impl Responder {
     let uuid = path.into_inner();
     let conn = conn.into_inner();
-    let resp: ErrorablePayload<()> = match UploadRow::from_database(&conn, uuid).await {
+    let resp: ErrorablePayload<()> = match UploadRow::from_database(&conn.pool, uuid).await {
         Ok(mut row) => {
-            match row.finish(&conn).await {
+            match row.finish(&conn.pool).await {
                 Ok(()) => ErrorablePayload::Ok(()),
                 Err(e) => e.into(),
             }
@@ -152,12 +153,24 @@ async fn upload_finish(conn: web::Data<DatabaseHandle>, path: web::Path<String>)
     resp.to_response(HttpResponse::Accepted())
 }
 
+struct SharedCtx {
+    pool: DatabaseHandle,
+    cwd: PathBuf,
+}
+
+const DATA_DIR: &str = "data";
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     std::env::set_var("RUST_LOG", "debug");
+    let mut cwd = std::env::current_dir()?;
+    cwd.push(DATA_DIR);
     env_logger::init();
     HttpServer::new(move || {
-        let pool = DatabaseHandle::new().unwrap();
+        let pool = SharedCtx {
+            pool: DatabaseHandle::new().unwrap(),
+            cwd: cwd.clone(),
+        };
         App::new()
             .app_data(web::Data::new(pool))
             .service(slash)

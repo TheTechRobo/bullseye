@@ -17,6 +17,8 @@ pub struct File {
 pub struct UploadRow {
     /** The primary key of the upload */
     pub(crate) id: String,
+    /** The directory the file is in */
+    pub(crate) dir: String,
     /** Current status of the upload
      * Not an enum because different pipelines will have different values for this.
      * The only meaningful values for the frontend are Creating, Uploading, and Finished.
