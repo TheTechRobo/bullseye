@@ -15,13 +15,18 @@ pub use data::*;
 
 pub mod status {
     pub const UPLOADING: &str = "UPLOADING";
+    pub const PENDING: &str = "PENDING";
     pub const FINISHED: &str = "FINISHED";
+    pub const FAILED_CHECKSUM: &str = "FAILED_CHECKSUM";
+    pub const FAILED_VERIFY: &str = "FAILED_VERIFY";
+    pub const FAILED_OTHER: &str = "FAILED_OTHER";
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum DbError {
     NotFound,
     WriteFailed,
+    WrongStatus,
     Other,
 }
 
@@ -30,6 +35,7 @@ impl fmt::Display for DbError {
         match self {
             DbError::NotFound => write!(f, "database row not found"),
             DbError::WriteFailed => write!(f, "database write failed"),
+            DbError::WrongStatus => write!(f, "wrong status"),
             DbError::Other => write!(f, "unknown database error"),
         }
     }
@@ -112,13 +118,43 @@ impl UploadRow {
         &self.status
     }
 
-    pub async fn enter(&mut self, conn: &DatabaseHandle) -> Result<(), DbError> {
+    pub async fn finish(&mut self, conn: &DatabaseHandle) -> Result<(), DbError> {
+        if self.status != status::UPLOADING {
+            return Err(DbError::WrongStatus);
+        }
         let s: unreql::Result<WriteStatus> = r
             .db("atuploads")
             .table("uploads")
             .get(self.id.clone())
             .update(rjson!({
-                "writing": r.row().g("writing").add(1)
+                "status": status::PENDING
+            }))
+            .exec(&conn.pool)
+            .await;
+        match s {
+            unreql::Result::Ok(ws) => {
+                if ws.errors > 0 {
+                    Err(DbError::WriteFailed)
+                } else if ws.skipped > 0 {
+                    Err(DbError::NotFound)
+                } else {
+                    self.status = status::PENDING.to_string();
+                    Ok(())
+                }
+            },
+            unreql::Result::Err(_) => Err(DbError::WriteFailed),
+        }
+    }
+
+    pub async fn enter(&mut self, conn: &DatabaseHandle) -> Result<(), DbError> {
+        let now = Self::now();
+        let s: unreql::Result<WriteStatus> = r
+            .db("atuploads")
+            .table("uploads")
+            .get(self.id.clone())
+            .update(rjson!({
+                "writing": r.row().g("writing").add(1),
+                "last_acivity": now
             }))
             .exec(&conn.pool)
             .await;
@@ -130,6 +166,7 @@ impl UploadRow {
                     Err(DbError::NotFound)
                 } else {
                     self.writing += 1;
+                    self.last_activity = now;
                     Ok(())
                 }
             }

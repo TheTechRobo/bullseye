@@ -17,6 +17,7 @@ impl<T> From<DbError> for ErrorablePayload<T> {
         match value {
             DbError::NotFound => Self::NotFound,
             DbError::WriteFailed => Self::Err("Write error".to_string()),
+            DbError::WrongStatus => Self::Err("Wrong status".to_string()),
             DbError::Other => Self::Err("Database error".to_string()),
         }
     }

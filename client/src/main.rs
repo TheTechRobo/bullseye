@@ -62,6 +62,7 @@ impl From<serde_json::Error> for UploadError {
 #[derive(Debug)]
 struct Upload {
     base_url: String,
+    id: String,
 }
 
 /// Runs a function returning Result in a loop with exponentional backoff.
@@ -160,7 +161,7 @@ impl Upload {
             Self::try_post(client, upload_endpoint, payload, 201).await?;
         Ok(Self {
             base_url: response.base_url,
-            // id: response.id,
+            id: response.id,
         })
     }
 
@@ -168,6 +169,12 @@ impl Upload {
         let nl = self.base_url.clone() + "/data";
         let url = Url::parse_with_params(&nl, &[("offset", offset.to_string())]).unwrap();
         let _: () = Self::try_put(client, url.to_string(), part_data, 201).await?;
+        Ok(())
+    }
+
+    pub async fn finish(&self, client: &Client) -> Result<()> {
+        let nl = self.base_url.clone() + "/finish";
+        let _: () = Self::try_post(client, nl.to_string(), "", 202).await?;
         Ok(())
     }
 
@@ -287,13 +294,26 @@ async fn iter_file(
     }
     bar.update_to(0)?; // to get the little animation
     bar.write("Finalizing upload...".colorize("bold blue"))?;
+    upload.finish(client).await?;
     let token = CancellationToken::new();
-    let (sender, receiver)= watch::channel("Making request...".to_string());
+    let (sender, receiver) = watch::channel("Making request...".to_string());
     let f = spawn(refresh_bar(bar, token.clone(), receiver));
 
     let mut current_status = String::new();
+    let mut tries = 0;
     while current_status != status::FINISHED {
-        let stream = upload.subscribe(client).await?;
+        let stream = match upload.subscribe(client).await {
+            Ok(s) => s,
+            Err(e) => {
+                dbg!(&e);
+                sleep(Duration::from_secs(1 << tries)).await;
+                tries += 1;
+                if tries > 12 {
+                    Err(e)?;
+                }
+                continue;
+            }
+        };
         pin_mut!(stream);
         while let Some(Ok(i)) = stream.next().await {
             match i {
@@ -301,6 +321,11 @@ async fn iter_file(
                     current_status = s.clone();
                     if s == status::FINISHED {
                         break;
+                    }
+                    if s == status::FAILED_CHECKSUM ||
+                        s == status::FAILED_VERIFY ||
+                        s == status::FAILED_OTHER {
+                        bail!("bad status: {}", s);
                     }
                     sender.send(s)?;
                 },
@@ -331,6 +356,7 @@ async fn upload_file(client: &Client, args: Args) -> Result<()> {
         },
     )
     .await?;
+    eprintln!("Upload ID: {}", &upload.id);
     let mut fh = tokio::fs::File::open(fp).await?;
     iter_file(client, upload, &mut fh, file.size).await?;
     Ok(())

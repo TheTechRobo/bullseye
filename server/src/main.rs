@@ -112,24 +112,44 @@ async fn upload_subscribe(conn: web::Data<DatabaseHandle>, path: web::Path<Strin
     let uuid = path.into_inner();
     let conn = conn.into_inner();
     let row = UploadRow::from_database(&conn, uuid).await;
-    if let Ok(mut row) = row {
-        HttpResponse::Ok()
-            .streaming(stream! {
-                let iter = row.stream_status_changes(&conn);
-                pin_mut!(iter);
-                while let Some(change) = iter.next().await {
-                    let event = UploadEvent::StatusChange(change);
-                    if let Ok(mut serialized) = serde_json::to_vec(&event) {
-                        serialized.push(0xA);
-                        yield Ok(Bytes::from(serialized));
-                    } else {
-                        yield Err("JSON serialize error\n");
+    match row {
+        Ok(mut row) => {
+            HttpResponse::Ok()
+                .streaming(stream! {
+                    let iter = row.stream_status_changes(&conn);
+                    pin_mut!(iter);
+                    while let Some(change) = iter.next().await {
+                        let event = UploadEvent::StatusChange(change);
+                        if let Ok(mut serialized) = serde_json::to_vec(&event) {
+                            serialized.push(0xA); // add newline to make this JSONL
+                            yield Ok(Bytes::from(serialized));
+                        } else {
+                            yield Err("JSON serialize error\n");
+                        }
                     }
-                }
-            })
-    } else {
-        HttpResponse::InternalServerError().body("hi")
+                })
+        },
+        Err(e) => {
+            let e: ErrorablePayload<()> = e.into();
+            e.to_response(HttpResponse::InternalServerError())
+        }
     }
+}
+
+#[post("/upload/{uuid}/finish")]
+async fn upload_finish(conn: web::Data<DatabaseHandle>, path: web::Path<String>) -> impl Responder {
+    let uuid = path.into_inner();
+    let conn = conn.into_inner();
+    let resp: ErrorablePayload<()> = match UploadRow::from_database(&conn, uuid).await {
+        Ok(mut row) => {
+            match row.finish(&conn).await {
+                Ok(()) => ErrorablePayload::Ok(()),
+                Err(e) => e.into(),
+            }
+        },
+        Err(e) => e.into(),
+    };
+    resp.to_response(HttpResponse::Accepted())
 }
 
 #[actix_web::main]
@@ -145,6 +165,7 @@ async fn main() -> std::io::Result<()> {
             .service(new_upload)
             .service(put_upload_chunk)
             .service(upload_subscribe)
+            .service(upload_finish)
     })
     .bind(("127.0.0.1", 7000))?
     .run()
