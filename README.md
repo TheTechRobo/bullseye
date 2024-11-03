@@ -6,6 +6,9 @@ Bullseye was based heavily on this design doc: https://s3.services.ams.aperture-
 
 This repository specifically includes the frontend (the `server` directory) and the client (the `client` directory), which are the generic parts. There is currently no director. Other parts are pipeline-specific; when writing them, you will probably want to link to the `common` crate provided in this repo.
 
+## Known issues
+The code isn't great, because I used this project as a chance to become better with Rust. It should work (tests coming soon™) but it might be a little hard to read at times. Patches welcome! :-)
+
 ## License
 
 Licensed under either of
