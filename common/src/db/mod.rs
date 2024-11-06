@@ -4,7 +4,7 @@ use futures::{Stream, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt, time::SystemTime};
 use unreql::{
-    cmd::options::ChangesOptions,
+    cmd::options::{ChangesOptions, UpdateOptions},
     r, rjson,
     types::{Change, WriteStatus},
 };
@@ -89,6 +89,10 @@ impl UploadRow {
         }
     }
 
+    pub fn dir(&self) -> &String {
+        &self.dir
+    }
+
     pub async fn from_database(conn: &DatabaseHandle, uuid: String) -> Result<UploadRow, DbError> {
         let result: Result<Vec<UploadRow>, _> = r
             .db("atuploads")
@@ -105,6 +109,45 @@ impl UploadRow {
         } else {
             println!("warning: Unknown database error occured, see: {result:?}");
             Err(DbError::Other)
+        }
+    }
+
+    pub async fn check_out(
+        conn: &DatabaseHandle,
+        status: String,
+        new_status: String,
+    ) -> Result<Option<Self>, DbError> {
+        let s: unreql::Result<WriteStatus<Self>> = r
+            .db("atuploads")
+            .table("uploads")
+            .get_all(r.with_opt(status, r.index("status")))
+            .limit(1)
+            .update(r.with_opt(
+                rjson!({
+                    "status": new_status,
+                    "last_activity": Self::now()
+                }),
+                UpdateOptions {
+                    return_changes: Some(true.into()),
+                    ..Default::default()
+                },
+            ))
+            .exec(&conn.pool)
+            .await;
+
+        match s {
+            unreql::Result::Ok(ws) => {
+                if ws.errors > 0 {
+                    Err(DbError::WriteFailed)
+                } else if ws.replaced > 0 {
+                    let changes = ws.changes.unwrap();
+                    assert_eq!(changes.len(), 1);
+                    Ok(changes[0].new_val.clone())
+                } else {
+                    Ok(None)
+                }
+            }
+            unreql::Result::Err(_) => Err(DbError::WriteFailed),
         }
     }
 
@@ -143,7 +186,7 @@ impl UploadRow {
                     self.status = status::PENDING.to_string();
                     Ok(())
                 }
-            },
+            }
             unreql::Result::Err(_) => Err(DbError::WriteFailed),
         }
     }
@@ -202,9 +245,38 @@ impl UploadRow {
         }
     }
 
-    /*pub async fn change_status(conn: &PoolWrapper, new_status: String) -> Result<(), DbError> {
+    pub fn file(&self) -> &File {
+        &self.file
+    }
 
-    }*/
+    pub async fn change_status(
+        &mut self,
+        conn: &DatabaseHandle,
+        new_status: String,
+    ) -> Result<(), DbError> {
+        let s: unreql::Result<WriteStatus> = r
+            .db("atuploads")
+            .table("uploads")
+            .get(self.id.clone())
+            .update(rjson!({
+                "status": new_status.clone()
+            }))
+            .exec(&conn.pool)
+            .await;
+        match s {
+            unreql::Result::Ok(ws) => {
+                if ws.errors > 0 {
+                    Err(DbError::WriteFailed)
+                } else if ws.skipped > 0 {
+                    Err(DbError::NotFound)
+                } else {
+                    self.status = new_status;
+                    Ok(())
+                }
+            }
+            unreql::Result::Err(_) => Err(DbError::WriteFailed),
+        }
+    }
 
     #[fix_hidden_lifetime_bug] // what the fuck
     pub fn stream_status_changes(&mut self, conn: &DatabaseHandle) -> impl Stream<Item = String> {
