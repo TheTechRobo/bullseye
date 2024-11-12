@@ -241,6 +241,7 @@ async fn refresh_bar(mut bar: RichProgress, token: CancellationToken, status: wa
         select! {
             _ = timer.tick() => {
                 let s = status.borrow();
+                let _ = bar.pb.write("Item entered status ".to_string() + &s);
                 bar.columns.truncate(3);
                 bar.columns.push(Column::Text(s.clone().colorize("green")));
                 let _ = bar.refresh();
@@ -384,7 +385,6 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<()> {
     term::init(stderr().is_terminal());
-    term::hide_cursor()?;
     let args = Args::parse();
     if args.items.is_empty() {
         bail!("Must have one or more items");
@@ -398,6 +398,5 @@ async fn main() -> Result<()> {
 
     upload_file(&client, args).await?;
 
-    term::show_cursor()?;
     Ok(())
 }
