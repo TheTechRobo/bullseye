@@ -258,13 +258,15 @@ async fn refresh_bar(mut bar: Option<RichProgress>, token: CancellationToken, st
     }
 }
 
+// Outside: Ok if upload OK, Err if any error.
+// Inside: Ok if upload OK, Err if hash verification failed.
 async fn iter_file(
     client: &Client,
     upload: Upload,
     file: &mut tokio::fs::File,
     size: u64,
     tty: bool,
-) -> Result<()> {
+) -> Result<Result<(), ()>> {
     let mut bytes_remaining = size;
     let mut offset: u64 = 0;
     let mut bar: Option<RichProgress> = None;
@@ -340,9 +342,11 @@ async fn iter_file(
                         break;
                     }
                     if s == status::FAILED_CHECKSUM ||
-                        s == status::FAILED_VERIFY ||
                         s == status::FAILED_OTHER {
                         bail!("bad status: {}", s);
+                    }
+                    if s == status::FAILED_VERIFY {
+                        return Ok(Err(()));
                     }
                     sender.send(s)?;
                 },
@@ -355,10 +359,10 @@ async fn iter_file(
         bar.clear()?;
     }
 
-    Ok(())
+    Ok(Ok(()))
 }
 
-async fn upload_file(client: &Client, args: Args, tty: bool) -> Result<()> {
+async fn upload_file(client: &Client, args: Args, tty: bool) -> Result<Result<(), ()>> {
     let fp = Path::new(&args.file);
     let file = get_file_metadata(fp).await?;
     let upload = Upload::new(
@@ -375,11 +379,10 @@ async fn upload_file(client: &Client, args: Args, tty: bool) -> Result<()> {
     .await?;
     eprintln!("Upload ID: {}", &upload.id);
     let mut fh = tokio::fs::File::open(fp).await?;
-    iter_file(client, upload, &mut fh, file.size, tty).await?;
-    Ok(())
+    iter_file(client, upload, &mut fh, file.size, tty).await
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 struct Args {
     pub file: String,
@@ -413,7 +416,13 @@ async fn main() -> Result<()> {
         .build()
         .unwrap();
 
-    upload_file(&client, args, is_tty).await?;
-
-    Ok(())
+    for i in 0..5 {
+        match upload_file(&client, args.clone(), is_tty).await {
+            Ok(Ok(())) => return Ok(()),
+            Ok(Err(())) => eprintln!("hash verification failed, retrying"),
+            Err(e) => eprintln!("other failure ({e:?}), retrying"),
+        };
+        sleep(Duration::from_secs(1 << i)).await;
+    }
+    bail!("upload failure")
 }
