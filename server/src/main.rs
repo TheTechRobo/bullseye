@@ -1,4 +1,4 @@
-use std::{io, path::PathBuf};
+use std::{io, path::{Path, PathBuf}};
 
 use actix_web::{get, post, put, web::{self, Bytes}, App, HttpRequest, HttpResponse, HttpServer, Responder};
 
@@ -25,7 +25,8 @@ async fn new_upload(
     pdetails: web::Json<UploadInitialisationPayload>,
 ) -> impl Responder {
     let id = uuidv7::create();
-    let details = pdetails.clone();
+    let mut details = pdetails.clone();
+    details.file.name = Path::new(&details.file.name).file_name().unwrap().to_str().unwrap().to_string();
     if let io::Result::Err(e) = files::new_file(conn.cwd.clone(), &id, details.file.size).await {
         dbg!(e);
         return NewUploadResp::Err("I/O error".to_string()).to_response(HttpResponse::Created());
