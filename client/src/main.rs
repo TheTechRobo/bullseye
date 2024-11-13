@@ -234,17 +234,22 @@ async fn read_chunk(file: &mut tokio::fs::File) -> Result<Bytes> {
     Ok(buf.freeze())
 }
 
-async fn refresh_bar(mut bar: RichProgress, token: CancellationToken, status: watch::Receiver<String>) -> RichProgress {
+async fn refresh_bar(mut bar: Option<RichProgress>, token: CancellationToken, status: watch::Receiver<String>) -> Option<RichProgress> {
     let mut timer = tokio::time::interval(Duration::from_millis(100));
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut prev = String::new();
     loop {
         select! {
             _ = timer.tick() => {
                 let s = status.borrow();
-                let _ = bar.pb.write("Item entered status ".to_string() + &s);
-                bar.columns.truncate(3);
-                bar.columns.push(Column::Text(s.clone().colorize("green")));
-                let _ = bar.refresh();
+                if let Some(&mut ref mut bar) = bar.as_mut() { // Go home, Rust, you're drunk.
+                    bar.columns.truncate(3);
+                    bar.columns.push(Column::Text(s.clone().colorize("green")));
+                    let _ = bar.refresh();
+                } else if s.to_string() != prev {
+                    eprintln!("Item entered status {}.", *s);
+                    prev = s.clone();
+                }
             }
             _ = token.cancelled() => {
                 return bar;
@@ -258,43 +263,54 @@ async fn iter_file(
     upload: Upload,
     file: &mut tokio::fs::File,
     size: u64,
+    tty: bool,
 ) -> Result<()> {
     let mut bytes_remaining = size;
     let mut offset: u64 = 0;
-    let mut bar = RichProgress::new(
-        tqdm!(
-            total = size.try_into()?,
-            unit_scale = true,
-            unit_divisor = 1024,
-            unit = "iB"
-        ),
-        vec![
-            Column::Spinner(Spinner::new(
-                &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
-                80.0,
-                1.0,
-            )),
-            Column::Text("[bold blue]?".to_owned()),
-            Column::Animation,
-            Column::Percentage(1),
-            Column::Text("•".to_owned()),
-            Column::CountTotal,
-            Column::Text("•".to_owned()),
-            Column::Rate,
-            Column::Text("•".to_owned()),
-            Column::RemainingTime,
-        ],
-    );
+    let mut bar: Option<RichProgress> = None;
+    eprintln!("Uploading {} bytes.", size);
+    if tty {
+        bar = Some(RichProgress::new(
+            tqdm!(
+                total = size.try_into()?,
+                unit_scale = true,
+                unit_divisor = 1024,
+                unit = "iB"
+            ),
+            vec![
+                Column::Spinner(Spinner::new(
+                    &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
+                    80.0,
+                    1.0,
+                )),
+                Column::Text("[bold blue]?".to_owned()),
+                Column::Animation,
+                Column::Percentage(1),
+                Column::Text("•".to_owned()),
+                Column::CountTotal,
+                Column::Text("•".to_owned()),
+                Column::Rate,
+                Column::Text("•".to_owned()),
+                Column::RemainingTime,
+            ],
+        ));
+    }
     while bytes_remaining > 0 {
         let chunk = read_chunk(file).await?;
         let l = chunk.len() as u64;
         upload.upload_part(client, offset, chunk).await?;
         offset += l;
         bytes_remaining -= l;
-        bar.update(l as usize)?;
+        if let Some(&mut ref mut bar) = bar.as_mut() {
+            let _ = bar.update(l as usize);
+        }
     }
-    bar.update_to(0)?; // to get the little animation
-    bar.write("Finalizing upload...".colorize("bold blue"))?;
+    if let Some(&mut ref mut bar) = bar.as_mut() {
+        let _ = bar.update_to(0); // to get the little animation
+        bar.write("Finalizing upload...".colorize("bold blue"))?;
+    } else {
+        eprintln!("Finalizing upload...");
+    }
     upload.finish(client).await?;
     let token = CancellationToken::new();
     let (sender, receiver) = watch::channel("Making request...".to_string());
@@ -335,14 +351,14 @@ async fn iter_file(
     }
 
     token.cancel();
-    let mut bar = f.await?;
-
-    bar.clear()?;
+    if let Some(mut bar) = f.await? {
+        bar.clear()?;
+    }
 
     Ok(())
 }
 
-async fn upload_file(client: &Client, args: Args) -> Result<()> {
+async fn upload_file(client: &Client, args: Args, tty: bool) -> Result<()> {
     let fp = Path::new(&args.file);
     let file = get_file_metadata(fp).await?;
     let upload = Upload::new(
@@ -359,7 +375,7 @@ async fn upload_file(client: &Client, args: Args) -> Result<()> {
     .await?;
     eprintln!("Upload ID: {}", &upload.id);
     let mut fh = tokio::fs::File::open(fp).await?;
-    iter_file(client, upload, &mut fh, file.size).await?;
+    iter_file(client, upload, &mut fh, file.size, tty).await?;
     Ok(())
 }
 
@@ -384,7 +400,8 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    term::init(stderr().is_terminal());
+    let is_tty = stderr().is_terminal();
+    term::init(is_tty);
     let args = Args::parse();
     if args.items.is_empty() {
         bail!("Must have one or more items");
@@ -396,7 +413,7 @@ async fn main() -> Result<()> {
         .build()
         .unwrap();
 
-    upload_file(&client, args).await?;
+    upload_file(&client, args, is_tty).await?;
 
     Ok(())
 }
