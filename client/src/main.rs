@@ -222,11 +222,7 @@ async fn get_file_metadata(fp: &Path) -> Result<File> {
     })
 }
 
-// There's a max buffer size of 2MiB, so no point allocating more than that.
-// Seriously, how has this not been fixed?
-// If this becomes a bottleneck, I can rewrite it to use spawn_blocking. We'll see.
-// Cf. https://github.com/tokio-rs/tokio/issues/1976
-const CHUNK_SIZE: usize = 2 * 1024 * 1024;
+const CHUNK_SIZE: usize = 16 * 1024 * 1024;
 
 async fn read_chunk(file: &mut tokio::fs::File) -> Result<Bytes> {
     let mut buf = BytesMut::with_capacity(CHUNK_SIZE);
@@ -379,6 +375,7 @@ async fn upload_file(client: &Client, args: Args, tty: bool) -> Result<Result<()
     .await?;
     eprintln!("Upload ID: {}", &upload.id);
     let mut fh = tokio::fs::File::open(fp).await?;
+    fh.set_max_buf_size(CHUNK_SIZE);
     iter_file(client, upload, &mut fh, file.size, tty).await
 }
 
