@@ -67,7 +67,6 @@ impl UploadRow {
             pipeline,
             project,
             status: "UPLOADING".to_string(),
-            writing: 0,
             last_activity: Self::now(),
             metadata,
         };
@@ -198,7 +197,6 @@ impl UploadRow {
             .table("uploads")
             .get(self.id.clone())
             .update(rjson!({
-                "writing": r.row().g("writing").add(1),
                 "last_activity": now
             }))
             .exec(&conn.pool)
@@ -210,34 +208,7 @@ impl UploadRow {
                 } else if ws.skipped > 0 {
                     Err(DbError::NotFound)
                 } else {
-                    self.writing += 1;
                     self.last_activity = now;
-                    Ok(())
-                }
-            }
-            unreql::Result::Err(_) => Err(DbError::WriteFailed),
-        }
-    }
-
-    // TODO: Do this in a destructor
-    pub async fn exit(&mut self, conn: &DatabaseHandle) -> Result<(), DbError> {
-        let s: unreql::Result<WriteStatus> = r
-            .db("atuploads")
-            .table("uploads")
-            .get(self.id.clone())
-            .update(rjson!({
-                "writing": r.row().g("writing").sub(1)
-            }))
-            .exec(&conn.pool)
-            .await;
-        match s {
-            unreql::Result::Ok(ws) => {
-                if ws.errors > 0 {
-                    Err(DbError::WriteFailed)
-                } else if ws.skipped > 0 {
-                    Err(DbError::NotFound)
-                } else {
-                    self.writing -= 1;
                     Ok(())
                 }
             }
@@ -310,18 +281,17 @@ pub struct DatabaseHandle {
 }
 
 impl DatabaseHandle {
-    pub fn new() -> Result<Self, ()> {
+    pub fn new() -> Result<Self, String> {
         let cfg = unreql::cmd::connect::Options::default();
         let manager = unreql_deadpool::SessionManager::new(cfg);
         let pool = deadpool::managed::Pool::builder(manager)
             .max_size(4)
             .build();
-        if let Ok(pool) = pool {
-            Ok(Self {
+        match pool {
+            Ok(pool) => Ok(Self {
                 pool: pool.wrapper(),
-            })
-        } else {
-            Err(())
+            }),
+            Err(e) => Err(e.to_string()),
         }
     }
 }

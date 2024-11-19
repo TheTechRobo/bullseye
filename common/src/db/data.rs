@@ -26,10 +26,6 @@ pub struct UploadRow {
     pub(crate) status: String,
 
     pub(crate) file: File,
-    /** The number of writes currently being done to the file.
-     * NOT A LOCK; the behaviour of simultaneous overlapping writes is undefined.
-     */
-    pub(crate) writing: u16,
     /** The last time the server received data from the client; can be used to expire uploads */
     pub(crate) last_activity: u64,
 

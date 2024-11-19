@@ -106,7 +106,6 @@ async fn put_upload_chunk(
                 dbg!(e);
                 res = UploadChunkResp::Err("I/O error".to_string());
             }
-            let _ = row.exit(&conn.pool).await; // not much we can do if this fails
         }
     }
     res.to_response(HttpResponse::Created())
@@ -147,7 +146,7 @@ async fn upload_finish(conn: web::Data<SharedCtx>, path: web::Path<String>) -> i
     let conn = conn.into_inner();
     let resp: ErrorablePayload<()> = match UploadRow::from_database(&conn.pool, uuid).await {
         Ok(mut row) => {
-            let lock = files::exclusive_lock(conn.cwd.clone(), &row.id()).await;
+            let lock = files::exclusive_lock(conn.cwd.clone(), row.id()).await;
             if lock.is_err() {
                 ErrorablePayload::Err("Failed to lock file".to_string())
             } else {
