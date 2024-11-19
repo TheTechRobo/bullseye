@@ -72,6 +72,12 @@ pub async fn new_file(mut path: PathBuf, id: &str, with_size: u64) -> io::Result
     }
 }
 
+pub async fn delete_file(mut path: PathBuf, id: &str) -> io::Result<()> {
+    path.push(id);
+    remove_file(path).await?;
+    Ok(())
+}
+
 pub async fn write_to_file(
     mut dir: PathBuf,
     id: &str,

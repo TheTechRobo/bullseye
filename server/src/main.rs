@@ -34,7 +34,7 @@ async fn new_upload(
     let res = UploadRow::new(
         &conn.pool,
         conn.cwd.to_str().unwrap().to_string(),
-        id,
+        id.clone(),
         details.file,
         details.pipeline,
         details.project,
@@ -54,7 +54,10 @@ async fn new_upload(
                     .to_string(),
             })
         }
-        Err(e) => NewUploadResp::from(e),
+        Err(e) => {
+            let _ = files::delete_file(conn.cwd.clone(), &id).await;
+            NewUploadResp::from(e)
+        }
     }
     .to_response(HttpResponse::Created())
 }
