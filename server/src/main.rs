@@ -144,9 +144,14 @@ async fn upload_finish(conn: web::Data<SharedCtx>, path: web::Path<String>) -> i
     let conn = conn.into_inner();
     let resp: ErrorablePayload<()> = match UploadRow::from_database(&conn.pool, uuid).await {
         Ok(mut row) => {
-            match row.finish(&conn.pool).await {
-                Ok(()) => ErrorablePayload::Ok(()),
-                Err(e) => e.into(),
+            let lock = files::exclusive_lock(conn.cwd.clone(), &row.id()).await;
+            if lock.is_err() {
+                ErrorablePayload::Err("Failed to lock file".to_string())
+            } else {
+                match row.finish(&conn.pool).await {
+                    Ok(()) => ErrorablePayload::Ok(()),
+                    Err(e) => e.into(),
+                }
             }
         },
         Err(e) => e.into(),

@@ -31,7 +31,7 @@ async fn acquire_lock(file: &mut File, exclusive: bool) -> io::Result<()> {
         Err(e) => {
             if e == Errno::EWOULDBLOCK { // The lock isn't available yet. Let the client retry.
                 Err(io::Error::other("file is locked"))
-            } else { // EWOULDBLOCK means the lock isn't available yet.
+            } else {
                 Err(io::Error::other(e))
             }
         }
@@ -48,10 +48,11 @@ async fn get_file(path: &str) -> io::Result<File> {
     Ok(f)
 }
 
-async fn exclusive_lock(path: &str) -> io::Result<()> {
-    let mut f = File::open(path).await?;
+pub async fn exclusive_lock(mut path: PathBuf, id: &str) -> io::Result<File> {
+    path.push(id);
+    let mut f = File::open(&path).await?;
     acquire_lock(&mut f, true).await?;
-    Ok(())
+    Ok(f)
 }
 
 pub async fn new_file(mut path: PathBuf, id: &str, with_size: u64) -> io::Result<()> {
