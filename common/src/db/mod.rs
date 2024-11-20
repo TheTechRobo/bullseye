@@ -68,6 +68,7 @@ impl UploadRow {
             project,
             status: "UPLOADING".to_string(),
             last_activity: Self::now(),
+            processing: false,
             metadata,
         };
         let result: Result<WriteStatus, _> = r
@@ -114,16 +115,16 @@ impl UploadRow {
     pub async fn check_out(
         conn: &DatabaseHandle,
         status: String,
-        new_status: String,
     ) -> Result<Option<Self>, DbError> {
         let s: unreql::Result<WriteStatus<Self>> = r
             .db("atuploads")
             .table("uploads")
             .get_all(r.with_opt(status, r.index("status")))
+            .get_all(r.with_opt(false, r.index("processing")))
             .limit(1)
             .update(r.with_opt(
                 rjson!({
-                    "status": new_status,
+                    "processing": true,
                     "last_activity": Self::now()
                 }),
                 UpdateOptions {
@@ -139,9 +140,9 @@ impl UploadRow {
                 if ws.errors > 0 {
                     Err(DbError::WriteFailed)
                 } else if ws.replaced > 0 {
-                    let changes = ws.changes.unwrap();
+                    let mut changes = ws.changes.unwrap();
                     assert_eq!(changes.len(), 1);
-                    Ok(changes[0].new_val.clone())
+                    Ok(changes.remove(0).new_val)
                 } else {
                     Ok(None)
                 }
