@@ -1,6 +1,9 @@
 # bullseye
 Bullseye is an upload target designed for use with Chromebot v2. However, it is very generic, and can be used in almost any kind of circumstance.
 
+## Warning
+Bullseye is still experimental. It does not currently have full testing, and is not yet used in any production software. Use with caution.
+
 ## General idea
 Bullseye was based heavily on this design doc: https://s3.services.ams.aperture-laboratories.science/rewby/public/85ba4e62-8d5a-4b81-b410-08575da464b6/HTTP%20Packer%20Design%20Doc.pdf. Reading through that design doc will help you understand how Bullseye works. Please note that the protocol is not exactly the same as is outlined in the design doc.
 
