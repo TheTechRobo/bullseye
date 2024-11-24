@@ -13,15 +13,6 @@ use unreql_deadpool::{IntoPoolWrapper, PoolWrapper};
 mod data;
 pub use data::*;
 
-pub mod status {
-    pub const UPLOADING: &str = "UPLOADING";
-    pub const PENDING: &str = "PENDING";
-    pub const FINISHED: &str = "FINISHED";
-    pub const FAILED_CHECKSUM: &str = "FAILED_CHECKSUM";
-    pub const FAILED_VERIFY: &str = "FAILED_VERIFY";
-    pub const FAILED_OTHER: &str = "FAILED_OTHER";
-}
-
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum DbError {
     NotFound,
@@ -66,7 +57,7 @@ impl UploadRow {
             file,
             pipeline,
             project,
-            status: "UPLOADING".to_string(),
+            status: Status::Uploading,
             last_activity: Self::now(),
             processing: false,
             metadata,
@@ -114,7 +105,7 @@ impl UploadRow {
 
     pub async fn check_out(
         conn: &DatabaseHandle,
-        status: String,
+        status: Status,
     ) -> Result<Option<Self>, DbError> {
         let s: unreql::Result<WriteStatus<Self>> = r
             .db("atuploads")
@@ -159,12 +150,12 @@ impl UploadRow {
         self.file.size
     }
 
-    pub fn status(&self) -> &String {
+    pub fn status(&self) -> &Status {
         &self.status
     }
 
     pub async fn finish(&mut self, conn: &DatabaseHandle) -> Result<(), DbError> {
-        if self.status != status::UPLOADING {
+        if self.status != Status::Uploading {
             return Err(DbError::WrongStatus);
         }
         let s: unreql::Result<WriteStatus> = r
@@ -172,7 +163,7 @@ impl UploadRow {
             .table("uploads")
             .get(self.id.clone())
             .update(rjson!({
-                "status": status::PENDING
+                "status": Status::Verifying
             }))
             .exec(&conn.pool)
             .await;
@@ -183,7 +174,7 @@ impl UploadRow {
                 } else if ws.skipped > 0 {
                     Err(DbError::NotFound)
                 } else {
-                    self.status = status::PENDING.to_string();
+                    self.status = Status::Verifying;
                     Ok(())
                 }
             }
@@ -224,7 +215,7 @@ impl UploadRow {
     pub async fn change_status(
         &mut self,
         conn: &DatabaseHandle,
-        new_status: String,
+        new_status: Status,
     ) -> Result<(), DbError> {
         let s: unreql::Result<WriteStatus> = r
             .db("atuploads")
@@ -251,7 +242,7 @@ impl UploadRow {
     }
 
     #[fix_hidden_lifetime_bug] // what the fuck
-    pub fn stream_status_changes(&mut self, conn: &DatabaseHandle) -> impl Stream<Item = String> {
+    pub fn stream_status_changes(&mut self, conn: &DatabaseHandle) -> impl Stream<Item = Status> {
         let opts = ChangesOptions::new()
             .include_initial(true)
             .include_states(false);
@@ -266,11 +257,10 @@ impl UploadRow {
         stream! {
             while let Ok(Some(changed)) = q.try_next().await {
                 if let Some(new_val) = changed.new_val {
-                    self.status = match &new_val["status"] {
-                        serde_json::Value::String(s) => s.clone(),
-                        _ => unreachable!("{}", new_val),
-                    };
-                    yield self.status.clone();
+                    if let Ok(status) = serde_json::from_value(new_val) {
+                        self.status = status;
+                        yield self.status.clone();
+                    }
                 }
             }
         }

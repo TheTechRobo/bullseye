@@ -1,4 +1,4 @@
-use crate::db::{DbError, File, Metadata, UploadRow};
+use crate::db::{DbError, File, Metadata, Status, UploadRow};
 use serde::{Deserialize, Serialize};
 
 // Response payloads
@@ -49,5 +49,5 @@ pub type UploadChunkResponse = ();
 #[serde(tag = "type", content = "payload")]
 #[serde(rename_all = "snake_case")]
 pub enum UploadEvent {
-    StatusChange(String),
+    StatusChange(Status),
 }

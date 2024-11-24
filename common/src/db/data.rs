@@ -1,3 +1,5 @@
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -13,17 +15,55 @@ pub struct File {
     pub size: u64,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum UploadError {
+    /// The checksum did not match. The client should try uploading again.
+    #[serde(rename = "FAILED_CHECKSUM")]
+    Checksum,
+    /// The file was uploaded successfully, but its contents are invalid or otherwise unacceptable.
+    /// The file the client was told to upload is invalid, and it should not try again.
+    #[serde(rename = "FAILED_VERIFY")]
+    Verify,
+    /// An unknown error occured when uploading.
+    #[serde(rename = "FAILED_OTHER")]
+    Other,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
+#[serde(untagged)]
+pub enum Status {
+    /// The file is currently being uploaded. The file has been fully allocated but its
+    /// contents might not be there yet.
+    Uploading,
+    /// The file is currently being verified.
+    Verifying,
+    /// Only used on some pipelines. The file is being processed in some way.
+    Deriving,
+    /// The file is currently being packed or otherwise queued for uploading.
+    Packing,
+    /// The file has been safely readied for uploading. The client's job is done.
+    Finished,
+    /// Something went wrong with the upload.
+    Error(UploadError),
+    /// The upload was abandoned by the client and the file has been removed.
+    Abandoned,
+}
+
+impl fmt::Display for Status {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", serde_json::to_value(self).unwrap().as_str().unwrap())
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UploadRow {
     /** The primary key of the upload */
     pub(crate) id: String,
     /** The directory the file is in */
     pub(crate) dir: String,
-    /** Current status of the upload
-     * Not an enum because different pipelines will have different values for this.
-     * The only meaningful values for the frontend are Creating, Uploading, and Finished.
-     */
-    pub(crate) status: String,
+
+    pub(crate) status: Status,
 
     pub(crate) file: File,
     /** The last time the server received data from the client; can be used to expire uploads */

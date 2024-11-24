@@ -13,7 +13,7 @@ mod files;
 
 #[get("/")]
 async fn slash() -> impl Responder {
-    HttpResponse::Ok().body("the archivists are coming for you")
+    HttpResponse::Ok().body("Did you know? This server has more than 1MB of RAM!")
 }
 
 type NewUploadResp = ErrorablePayload<NewUploadResponse>;
@@ -94,7 +94,7 @@ async fn put_upload_chunk(
     let row = UploadRow::from_database(&conn.pool, uuid).await;
     let mut res = UploadChunkResp::Ok(());
     if let Ok(mut row) = row {
-        if row.status() != status::UPLOADING {
+        if row.status() != &Status::Uploading {
             res = UploadChunkResp::Err("Item is not in the UPLOADING status".to_string());
         } else if offset > row.size() {
             res = UploadChunkResp::Err("Offset too large".to_string());

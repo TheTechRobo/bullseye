@@ -3,7 +3,7 @@ use async_stream::stream;
 use bytes::{Bytes, BytesMut};
 use clap::Parser;
 use common::{
-    db::{status, File, Metadata},
+    db::{File, Metadata, Status},
     hash_file,
     payloads::*,
 };
@@ -230,19 +230,19 @@ async fn read_chunk(file: &mut tokio::fs::File) -> Result<Bytes> {
     Ok(buf.freeze())
 }
 
-async fn refresh_bar(mut bar: Option<RichProgress>, token: CancellationToken, status: watch::Receiver<String>) -> Option<RichProgress> {
+async fn refresh_bar(mut bar: Option<RichProgress>, token: CancellationToken, status: watch::Receiver<Status>) -> Option<RichProgress> {
     let mut timer = tokio::time::interval(Duration::from_millis(100));
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut prev = String::new();
+    let mut prev = Status::Uploading;
     loop {
         select! {
             _ = timer.tick() => {
                 let s = status.borrow();
                 if let Some(&mut ref mut bar) = bar.as_mut() { // Go home, Rust, you're drunk.
                     bar.columns.truncate(3);
-                    bar.columns.push(Column::Text(s.clone().colorize("green")));
+                    bar.columns.push(Column::Text(s.to_string().colorize("green")));
                     let _ = bar.refresh();
-                } else if s.to_string() != prev {
+                } else if *s != prev {
                     eprintln!("Item entered status {}.", *s);
                     prev = s.clone();
                 }
@@ -311,12 +311,12 @@ async fn iter_file(
     }
     upload.finish(client).await?;
     let token = CancellationToken::new();
-    let (sender, receiver) = watch::channel("Making request...".to_string());
+    let (sender, receiver) = watch::channel(Status::Uploading);
     let f = spawn(refresh_bar(bar, token.clone(), receiver));
 
-    let mut current_status = String::new();
+    let mut current_status = Status::Uploading;
     let mut tries = 0;
-    while current_status != status::FINISHED {
+    while current_status != Status::Finished {
         let stream = match upload.subscribe(client).await {
             Ok(s) => s,
             Err(e) => {
@@ -334,17 +334,12 @@ async fn iter_file(
             match i {
                 UploadEvent::StatusChange(s) => {
                     current_status = s.clone();
-                    if s == status::FINISHED {
-                        break;
+                    match s {
+                        Status::Finished => break,
+                        Status::Error(common::db::UploadError::Checksum) => return Ok(Err(())),
+                        Status::Error(_) => bail!("bad staus: {}", s),
+                        _ => sender.send(s)?,
                     }
-                    if s == status::FAILED_CHECKSUM ||
-                        s == status::FAILED_OTHER {
-                        bail!("bad status: {}", s);
-                    }
-                    if s == status::FAILED_VERIFY {
-                        return Ok(Err(()));
-                    }
-                    sender.send(s)?;
                 },
             }
         }
