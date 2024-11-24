@@ -14,6 +14,8 @@ use tokio::{
     task::spawn_blocking,
 };
 
+pub const DATA_DIR: &str = "data";
+
 async fn acquire_lock(file: &mut File, exclusive: bool) -> io::Result<()> {
     let fd = file.as_raw_fd();
     let arg = match exclusive {
@@ -102,4 +104,57 @@ pub async fn write_to_file(
         }
     }
     io::Result::Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::mem;
+
+    use actix_web::{test::{self, TestRequest}, App};
+    use tokio::fs::{metadata, File, OpenOptions};
+
+    use crate::files;
+    use super::DATA_DIR;
+
+    #[actix_web::test]
+    async fn test_create_delete() {
+        const NAME: &str = "Unit-test-NewFile";
+        let mut dir = std::env::current_dir().unwrap();
+        dir.push(DATA_DIR);
+        files::new_file(dir.clone(), NAME, 20).await.unwrap();
+        let mut file = dir.clone();
+        file.push(NAME);
+        let m = metadata(file.clone()).await.unwrap();
+        assert_eq!(m.len(), 20);
+        files::delete_file(dir, NAME).await.unwrap();
+        metadata(file).await.unwrap_err();
+    }
+
+    #[actix_web::test]
+    async fn test_locks() {
+        const NAME: &str = "Unit-test-Locks";
+        let mut dir = std::env::current_dir().unwrap();
+        dir.push(DATA_DIR);
+        let mut path = dir.clone();
+        path.push(NAME);
+        let mut file = OpenOptions::new().create(true).write(true).open(&path).await.unwrap();
+        let mut file2 = File::open(&path).await.unwrap();
+        let mut file3 = File::open(&path).await.unwrap();
+        let mut file4 = File::open(&path).await.unwrap();
+        // Shared lock. Succeeds.
+        files::acquire_lock(&mut file, false).await.unwrap();
+        // Exclusive lock. Fails due to the preexisting shared lock.
+        files::acquire_lock(&mut file2, true).await.unwrap_err();
+        // Shared lock. Succeeds because the only other lock is shared.
+        files::acquire_lock(&mut file3, false).await.unwrap();
+        // Exclusive lock. Fails due to the preexisting shared lock.
+        files::exclusive_lock(dir, NAME).await.unwrap_err();
+        // Close shared locks
+        mem::drop(file);
+        mem::drop(file3);
+        // Exclusive lock. Succeeds; other locks have been closed.
+        files::acquire_lock(&mut file2, true).await.unwrap();
+        // Shared lock. Fails due to exclusive lock.
+        files::acquire_lock(&mut file4, false).await.unwrap_err();
+    }
 }

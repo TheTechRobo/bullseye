@@ -166,7 +166,7 @@ struct SharedCtx {
     cwd: PathBuf,
 }
 
-const DATA_DIR: &str = "data";
+use files::DATA_DIR;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -192,3 +192,4 @@ async fn main() -> std::io::Result<()> {
     .run()
     .await
 }
+
