@@ -113,9 +113,10 @@ mod tests {
     use actix_web::{test::{self, TestRequest}, App};
     use tokio::fs::{metadata, File, OpenOptions};
 
-    use crate::files;
+    use crate::files::{self, new_file};
     use super::DATA_DIR;
 
+    /// Ensures that file creation and deletion works as expected.
     #[actix_web::test]
     async fn test_create_delete() {
         const NAME: &str = "Unit-test-NewFile";
@@ -130,6 +131,7 @@ mod tests {
         metadata(file).await.unwrap_err();
     }
 
+    /// Ensures that locks work as expected.
     #[actix_web::test]
     async fn test_locks() {
         const NAME: &str = "Unit-test-Locks";
@@ -156,5 +158,17 @@ mod tests {
         files::acquire_lock(&mut file2, true).await.unwrap();
         // Shared lock. Fails due to exclusive lock.
         files::acquire_lock(&mut file4, false).await.unwrap_err();
+    }
+
+    /// Ensures that new_file does not overwrite existing files.
+    #[actix_web::test]
+    async fn test_file_exclusivity() {
+        const NAME: &str = "Unit-test-Exclusivity";
+        let mut dir = std::env::current_dir().unwrap();
+        dir.push(DATA_DIR);
+        new_file(dir.clone(), NAME, 20).await.unwrap();
+        new_file(dir.clone(), NAME, 25).await.unwrap_err();
+        dir.push(NAME);
+        assert_eq!(metadata(dir).await.unwrap().len(), 20);
     }
 }
