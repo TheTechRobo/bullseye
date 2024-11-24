@@ -21,7 +21,7 @@ use std::{
     path::Path,
     time::Duration,
 };
-use tokio::{fs::metadata, io::{AsyncBufReadExt, AsyncReadExt}, select, spawn, sync::watch, time::sleep};
+use tokio::{fs::metadata, io::{AsyncBufReadExt, AsyncReadExt}, select, spawn, sync::watch, task::spawn_blocking, time::sleep};
 use tokio_util::{io::StreamReader, sync::CancellationToken};
 use url::Url;
 
@@ -214,7 +214,7 @@ impl Upload {
 async fn get_file_metadata(fp: &Path) -> Result<File> {
     let metadata = metadata(fp).await?;
     let f = fs::File::open(fp)?;
-    let hash = hash_file(f).await?;
+    let hash = spawn_blocking(|| hash_file(f)).await??;
     Ok(File {
         name: fp.file_name().unwrap().to_str().unwrap().to_string(), // Why
         hash,
