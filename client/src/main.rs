@@ -3,7 +3,7 @@ use async_stream::stream;
 use bytes::{Bytes, BytesMut};
 use clap::Parser;
 use common::{
-    db::{File, Metadata, Status},
+    data::{File, Metadata, Status},
     hash_file,
     payloads::*,
 };
@@ -336,7 +336,7 @@ async fn iter_file(
                     current_status = s.clone();
                     match s {
                         Status::Finished => break,
-                        Status::Error(common::db::UploadError::Checksum) => return Ok(Err(())),
+                        Status::Error(common::data::UploadError::Checksum) => return Ok(Err(())),
                         Status::Error(_) => bail!("bad staus: {}", s),
                         _ => sender.send(s)?,
                     }

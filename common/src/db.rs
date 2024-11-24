@@ -10,8 +10,7 @@ use unreql::{
 };
 use unreql_deadpool::{IntoPoolWrapper, PoolWrapper};
 
-mod data;
-pub use data::*;
+pub use crate::data::*;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum DbError {

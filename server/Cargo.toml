@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 actix-web = "4.9.0"
 async-stream = "0.3.6"
-common = { version = "0.1.0", path = "../common" }
+common = { version = "0.1.0", path = "../common", features = ["db"] }
 env_logger = "0.11.5"
 futures = "0.3.31"
 futures-util = "0.3.31"

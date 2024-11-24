@@ -1,4 +1,6 @@
-use crate::db::{DbError, File, Metadata, Status, UploadRow};
+use crate::data::{File, Metadata, Status, UploadRow};
+#[cfg(feature = "db")]
+use crate::db::DbError;
 use serde::{Deserialize, Serialize};
 
 // Response payloads
@@ -12,6 +14,7 @@ pub enum ErrorablePayload<T> {
     Err(String),
 }
 
+#[cfg(feature = "db")]
 impl<T> From<DbError> for ErrorablePayload<T> {
     fn from(value: DbError) -> Self {
         match value {

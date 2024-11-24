@@ -4,15 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-async-stream = "0.3.6"
+async-stream = { version = "0.3.6", optional = true }
 base16ct = { version = "0.2.0", features = ["alloc"] }
-deadpool = "0.10"
-fix-hidden-lifetime-bug = "0.2.7"
+deadpool = { version = "0.10", optional = true }
+fix-hidden-lifetime-bug = { version = "0.2.7", optional = true }
 futures = "0.3.31"
-serde = "1.0.210"
+serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.132"
 sha2 = "0.10.8"
 tokio = { version = "1.41.0", features = ["rt"] }
-unreql = "0.1.8"
-unreql_deadpool = "0.1.1"
-uuidv7 = "0.1.4"
+unreql = { version = "0.1.8", optional = true }
+unreql_deadpool = { version = "0.1.1", optional = true }
+
+[features]
+db = ["dep:async-stream", "dep:deadpool", "dep:fix-hidden-lifetime-bug", "dep:unreql", "dep:unreql_deadpool"]
