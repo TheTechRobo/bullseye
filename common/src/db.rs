@@ -112,11 +112,15 @@ impl UploadRow {
             .get_all(r.with_opt(status, r.index("status")))
             .get_all(r.with_opt(false, r.index("processing")))
             .limit(1)
-            .update(r.with_opt(
-                rjson!({
-                    "processing": true,
-                    "last_activity": Self::now()
-                }),
+            .update(r.with_opt
+                r.branch(
+                    r.row("processing").eq(false),
+                    rjson!({
+                        "processing": true,
+                        "last_activity": Self::now()
+                    }),
+                    rjson!({})
+                ),
                 UpdateOptions {
                     return_changes: Some(true.into()),
                     ..Default::default()
@@ -132,7 +136,8 @@ impl UploadRow {
                 } else if ws.replaced > 0 {
                     let mut changes = ws.changes.unwrap();
                     assert_eq!(changes.len(), 1);
-                    Ok(changes.remove(0).new_val)
+                    let v = changes.remove(0).new_val;
+                    Ok(v)
                 } else {
                     Ok(None)
                 }
