@@ -102,10 +102,7 @@ impl UploadRow {
         }
     }
 
-    pub async fn check_out(
-        conn: &DatabaseHandle,
-        status: Status,
-    ) -> Result<Option<Self>, DbError> {
+    pub async fn check_out(conn: &DatabaseHandle, status: Status) -> Result<Option<Self>, DbError> {
         let s: unreql::Result<WriteStatus<Self>> = r
             .db("atuploads")
             .table("uploads")
@@ -119,7 +116,7 @@ impl UploadRow {
                         "processing": true,
                         "last_activity": Self::now()
                     }),
-                    rjson!({})
+                    rjson!({}),
                 ),
                 UpdateOptions {
                     return_changes: Some(true.into()),
