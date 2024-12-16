@@ -52,7 +52,11 @@ pub enum Status {
 
 impl fmt::Display for Status {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", serde_json::to_value(self).unwrap().as_str().unwrap())
+        write!(
+            f,
+            "{}",
+            serde_json::to_value(self).unwrap().as_str().unwrap()
+        )
     }
 }
 
@@ -92,10 +96,18 @@ mod tests {
         let tests = [
             (Status::Verifying, "VERIFYING"),
             (Status::Uploading, "UPLOADING"),
-            (Status::Error(UploadError::Verify), "FAILED_VERIFY")
+            (Status::Error(UploadError::Verify), "FAILED_VERIFYA"),
         ];
         for (src, expected) in tests {
-            assert_eq!(serde_json::to_value(src).unwrap().as_str().unwrap(), expected);
+            assert_eq!(
+                serde_json::from_str::<Status>(&serde_json::to_string(&src).unwrap()).unwrap(),
+                src
+            );
+            assert_eq!(format!("{}", &src), expected);
+            assert_eq!(
+                serde_json::to_value(src.clone()).unwrap().as_str().unwrap(),
+                expected
+            );
         }
     }
 }
