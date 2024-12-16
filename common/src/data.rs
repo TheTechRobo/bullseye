@@ -31,7 +31,6 @@ pub enum UploadError {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "UPPERCASE")]
-#[serde(untagged)]
 pub enum Status {
     /// The file is currently being uploaded. The file has been fully allocated but its
     /// contents might not be there yet.
@@ -44,10 +43,11 @@ pub enum Status {
     Packing,
     /// The file has been safely readied for uploading. The client's job is done.
     Finished,
-    /// Something went wrong with the upload.
-    Error(UploadError),
     /// The upload was abandoned by the client and the file has been removed.
     Abandoned,
+    /// Something went wrong with the upload.
+    #[serde(untagged)]
+    Error(UploadError),
 }
 
 impl fmt::Display for Status {

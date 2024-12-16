@@ -112,9 +112,9 @@ impl UploadRow {
             .get_all(r.with_opt(status, r.index("status")))
             .get_all(r.with_opt(false, r.index("processing")))
             .limit(1)
-            .update(r.with_opt
+            .update(r.with_opt(
                 r.branch(
-                    r.row("processing").eq(false),
+                    r.row().g("processing").eq(false),
                     rjson!({
                         "processing": true,
                         "last_activity": Self::now()
