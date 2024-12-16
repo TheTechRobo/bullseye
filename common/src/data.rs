@@ -82,3 +82,20 @@ pub struct UploadRow {
 
     pub(crate) metadata: Metadata,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Status, UploadError};
+
+    #[test]
+    fn status_serialization() {
+        let tests = [
+            (Status::Verifying, "VERIFYING"),
+            (Status::Uploading, "UPLOADING"),
+            (Status::Error(UploadError::Verify), "FAILED_VERIFY")
+        ];
+        for (src, expected) in tests {
+            assert_eq!(serde_json::to_value(src).unwrap().as_str().unwrap(), expected);
+        }
+    }
+}
