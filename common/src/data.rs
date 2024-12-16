@@ -96,7 +96,7 @@ mod tests {
         let tests = [
             (Status::Verifying, "VERIFYING"),
             (Status::Uploading, "UPLOADING"),
-            (Status::Error(UploadError::Verify), "FAILED_VERIFYA"),
+            (Status::Error(UploadError::Verify), "FAILED_VERIFY"),
         ];
         for (src, expected) in tests {
             assert_eq!(
