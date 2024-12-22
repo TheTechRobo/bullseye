@@ -1,4 +1,5 @@
 use futures_util::StreamExt as _;
+use nix::sys::statvfs::statvfs;
 #[allow(deprecated)] // See the acquire_lock function for rationale.
 use nix::{errno::Errno, fcntl::{flock, posix_fallocate}};
 use std::{
@@ -197,5 +198,11 @@ mod tests {
         dir.push(NAME);
         assert_eq!(fs::metadata(dir.clone()).await.unwrap().len(), 0);
         fs::remove_file(dir).await.unwrap();
+    }
+
+    #[actix_web::test]
+    async fn test_free_space_works() {
+        let pb: PathBuf = [DATA_DIR].iter().collect();
+        get_free_space(pb).await.unwrap();
     }
 }
