@@ -1,4 +1,4 @@
-# Writes the binary to /output/bullseye-client
+# Writes the binary to /bullseye-client
 
 FROM rust:1.82 AS builder
 
@@ -7,7 +7,8 @@ WORKDIR /usr/src/myapp
 RUN git clone https://github.com/TheTechRobo/bullseye
 WORKDIR /usr/src/myapp/bullseye/client
 RUN cargo install --path .
-RUN cp /usr/local/cargo/bin/bullseye-client /output/bullseye-client
 
-ENTRYPOINT ["/output/bullseye-client"]
+FROM scratch
+
+COPY --from=builder /usr/local/cargo/bin/bullseye-client /bullseye-client
 
