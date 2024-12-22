@@ -301,6 +301,8 @@ async fn iter_file(
         bytes_remaining -= l;
         if let Some(&mut ref mut bar) = bar.as_mut() {
             let _ = bar.update(l as usize);
+        } else {
+            eprintln!("uploaded {l}; {bytes_remaining} to go");
         }
     }
     if let Some(&mut ref mut bar) = bar.as_mut() {
