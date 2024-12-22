@@ -65,12 +65,17 @@ pub async fn new_file(mut path: PathBuf, id: &str, with_size: u64) -> io::Result
     path.push(id);
     let file = File::create_new(&path).await?;
     let fd = file.as_fd().as_raw_fd();
-    match spawn_blocking(move || posix_fallocate(fd, 0, with_size)).await? {
-        Ok(()) => io::Result::Ok(()),
-        Err(e) => {
-            remove_file(path).await?;
-            io::Result::Err(io::Error::other(format!("{e}")))
+    if with_size > 0 {
+        match spawn_blocking(move || posix_fallocate(fd, 0, with_size)).await? {
+            Ok(()) => io::Result::Ok(()),
+            Err(e) => {
+                remove_file(path).await?;
+                io::Result::Err(io::Error::other(format!("{e}")))
+            }
         }
+    } else {
+        // posix_fallocate doesn't accept len <= 0, but that space is already guaranteed anyway
+        io::Result::Ok(())
     }
 }
 
@@ -106,15 +111,24 @@ pub async fn write_to_file(
     io::Result::Ok(())
 }
 
+// TODO: Tests are run in parallel, so how do I test this?
+// Other tests may have started when we check free space.
+async fn get_free_space(path: PathBuf) -> io::Result<u64> {
+    let stats = spawn_blocking(move || statvfs(&path)).await??;
+    let fragment_size = stats.fragment_size();
+    let available_blocks = stats.blocks_available();
+    Ok(fragment_size * available_blocks)
+}
+
 #[cfg(test)]
 mod tests {
-    use std::mem;
+    use std::{mem, path::PathBuf};
 
     use actix_web::{test::{self, TestRequest}, App};
-    use tokio::fs::{metadata, File, OpenOptions};
+    use tokio::fs::{self, File, OpenOptions};
 
     use crate::files::{self, new_file};
-    use super::DATA_DIR;
+    use super::{get_free_space, DATA_DIR};
 
     /// Ensures that file creation and deletion works as expected.
     #[actix_web::test]
@@ -125,10 +139,10 @@ mod tests {
         files::new_file(dir.clone(), NAME, 20).await.unwrap();
         let mut file = dir.clone();
         file.push(NAME);
-        let m = metadata(file.clone()).await.unwrap();
+        let m = fs::metadata(file.clone()).await.unwrap();
         assert_eq!(m.len(), 20);
         files::delete_file(dir, NAME).await.unwrap();
-        metadata(file).await.unwrap_err();
+        fs::metadata(file).await.unwrap_err();
     }
 
     /// Ensures that locks work as expected.
@@ -169,6 +183,19 @@ mod tests {
         new_file(dir.clone(), NAME, 20).await.unwrap();
         new_file(dir.clone(), NAME, 25).await.unwrap_err();
         dir.push(NAME);
-        assert_eq!(metadata(dir).await.unwrap().len(), 20);
+        assert_eq!(fs::metadata(dir.clone()).await.unwrap().len(), 20);
+        fs::remove_file(dir).await.unwrap();
+    }
+
+    /// Regression test. Ensures that zero-size files work.
+    #[actix_web::test]
+    async fn test_zero_size_file() {
+        const NAME: &str = "Unit-test-ZeroSize";
+        let mut dir = std::env::current_dir().unwrap();
+        dir.push(DATA_DIR);
+        new_file(dir.clone(), NAME, 0).await.unwrap();
+        dir.push(NAME);
+        assert_eq!(fs::metadata(dir.clone()).await.unwrap().len(), 0);
+        fs::remove_file(dir).await.unwrap();
     }
 }
