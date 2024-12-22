@@ -2,8 +2,8 @@ name: Push client to Docker Hub
 
 on:
   push:
-    branches:
-      - 'master'
+    branches: ['master']
+    paths: ['.github/workflows/*', 'client', 'common']
 
 jobs:
   docker:
