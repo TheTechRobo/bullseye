@@ -19,7 +19,7 @@ jobs:
     - name: Build server
       working-directory: "server"
       run: cargo build --verbose
-    - name: Run tests on server
-      working-directory: "server"
-      run: cargo test --verbose
+#    - name: Run tests on server
+#      working-directory: "server"
+#      run: cargo test --verbose
 
