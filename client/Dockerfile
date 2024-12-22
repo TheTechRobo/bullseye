@@ -1,10 +1,13 @@
 # Writes the binary to /bullseye-client
+# This Dockerfile must have its context in the parent dir,
+# ie, in the root of the repo, use -f to specify this Dockerfile.
 
-FROM rust:1.82 AS builder
+FROM rust:1.82-alpine AS builder
 
-RUN mkdir /output
+RUN apk add --no-cache git musl-dev pkgconfig
+
 WORKDIR /usr/src/myapp
-RUN git clone https://github.com/TheTechRobo/bullseye
+COPY . bullseye
 WORKDIR /usr/src/myapp/bullseye/client
 RUN cargo install --path .
 
