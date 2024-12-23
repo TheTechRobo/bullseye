@@ -593,6 +593,7 @@ dependencies = [
  "deadpool",
  "fix-hidden-lifetime-bug",
  "futures",
+ "nix",
  "serde",
  "serde_json",
  "sha2",

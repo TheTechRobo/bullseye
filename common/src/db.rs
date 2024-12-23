@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt, time::SystemTime};
 use unreql::{
     cmd::options::{ChangesOptions, UpdateOptions},
-    r, rjson,
+    r, rjson, func,
     types::{Change, WriteStatus},
 };
 use unreql_deadpool::{IntoPoolWrapper, PoolWrapper};
@@ -41,6 +41,7 @@ impl UploadRow {
             .as_secs()
     }
 
+    /// Creates a new database entry.
     pub async fn new(
         conn: &DatabaseHandle,
         dir: String,
@@ -79,10 +80,12 @@ impl UploadRow {
         }
     }
 
+    /// Gets the directory containing the upload.
     pub fn dir(&self) -> &String {
         &self.dir
     }
 
+    /// Retrieves a specific item from the database.
     pub async fn from_database(conn: &DatabaseHandle, uuid: String) -> Result<UploadRow, DbError> {
         let result: Result<Vec<UploadRow>, _> = r
             .db("atuploads")
@@ -102,16 +105,33 @@ impl UploadRow {
         }
     }
 
-    pub async fn check_out(conn: &DatabaseHandle, status: Status) -> Result<Option<Self>, DbError> {
+    /// Checks an item out of the database for further processing.
+    ///
+    /// Provide the project, pipeline, and status to filter by.
+    /// This will set the `processing` flag to true. Make sure you call change_status when
+    /// finished!
+    ///
+    /// If processing is set to true, check_out will only return items with `processing` set to
+    /// true that have been claimed for more than 60 seconds. It is up to you to make sure nobody
+    /// else is modifying the file. If processing is set to false, check_out will only return items
+    /// with `processing` set to false.
+    pub async fn check_out(conn: &DatabaseHandle, project: String, pipeline: String, status: Status, processing: bool) -> Result<Option<Self>, DbError> {
+        let activity_grace = match processing {
+            true => Self::now() - 60,
+            false => u64::MAX,
+        };
         let s: unreql::Result<WriteStatus<Self>> = r
             .db("atuploads")
             .table("uploads")
-            .get_all(r.with_opt(status, r.index("status")))
-            .get_all(r.with_opt(false, r.index("processing")))
-            .limit(1)
+            // [project: String, pipeline: String, status: Status, processing: bool]
+            .get_all(r.with_opt(rjson!([project, pipeline, status, processing]), r.index("nf_status")))
+            .filter(func!(|row| {
+                row.g("last_activity").lt(activity_grace)
+            }))
+            .sample(1)
             .update(r.with_opt(
                 r.branch(
-                    r.row().g("processing").eq(false),
+                    r.row().g("processing").eq(processing),
                     rjson!({
                         "processing": true,
                         "last_activity": Self::now()
@@ -143,18 +163,22 @@ impl UploadRow {
         }
     }
 
+    /// Gets the unique ID of the item.
     pub fn id(&self) -> &String {
         &self.id
     }
 
+    /// Gets the file size.
     pub fn size(&self) -> u64 {
         self.file.size
     }
 
+    /// Gets the current status.
     pub fn status(&self) -> &Status {
         &self.status
     }
 
+    /// Convenience wrapper around change_status to set the status to Verifying.
     pub async fn finish(&mut self, conn: &DatabaseHandle) -> Result<(), DbError> {
         if self.status != Status::Uploading {
             return Err(DbError::WrongStatus);
@@ -183,6 +207,7 @@ impl UploadRow {
         }
     }
 
+    /// Sets the last_activity to now.
     pub async fn enter(&mut self, conn: &DatabaseHandle) -> Result<(), DbError> {
         let now = Self::now();
         let s: unreql::Result<WriteStatus> = r
@@ -213,6 +238,7 @@ impl UploadRow {
         &self.file
     }
 
+    /// Changes the status of the item to new_status and sets processing to false.
     pub async fn change_status(
         &mut self,
         conn: &DatabaseHandle,
@@ -223,7 +249,8 @@ impl UploadRow {
             .table("uploads")
             .get(self.id.clone())
             .update(rjson!({
-                "status": new_status.clone()
+                "status": new_status.clone(),
+                "processing": false,
             }))
             .exec(&conn.pool)
             .await;
@@ -242,6 +269,7 @@ impl UploadRow {
         }
     }
 
+    /// Streams status changes.
     #[fix_hidden_lifetime_bug] // what the fuck
     pub fn stream_status_changes(&mut self, conn: &DatabaseHandle) -> impl Stream<Item = Status> {
         let opts = ChangesOptions::new()
@@ -271,11 +299,13 @@ impl UploadRow {
     }
 }
 
+/// A connection pool for the database.
 pub struct DatabaseHandle {
     pub(crate) pool: PoolWrapper,
 }
 
 impl DatabaseHandle {
+    /// Creates a new connection pool.
     pub fn new() -> Result<Self, String> {
         let cfg = unreql::cmd::connect::Options::default();
         let manager = unreql_deadpool::SessionManager::new(cfg);

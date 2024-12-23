@@ -1,7 +1,5 @@
 use futures_util::StreamExt as _;
-use nix::sys::statvfs::statvfs;
-#[allow(deprecated)] // See the acquire_lock function for rationale.
-use nix::{errno::Errno, fcntl::{flock, posix_fallocate}};
+use nix::{sys::statvfs::statvfs, fcntl::posix_fallocate};
 use std::{
     io,
     os::fd::{AsFd, AsRawFd},
@@ -19,26 +17,7 @@ pub const DATA_DIR: &str = "data";
 
 async fn acquire_lock(file: &mut File, exclusive: bool) -> io::Result<()> {
     let fd = file.as_raw_fd();
-    let arg = match exclusive {
-        true => nix::fcntl::FlockArg::LockExclusiveNonblock,
-        false => nix::fcntl::FlockArg::LockSharedNonblock,
-    };
-    // We can't use the Flock struct because it requires an owned std::File or OwnedFd. I'm not
-    // sure why it's so insistent on consuming the file. How does it expect you to *use* the file?
-    // We could theoretically duplicate the file handle, but why would we when there's a
-    // perfectly good deprecated function here?
-    #[allow(deprecated)]
-    let res = spawn_blocking(move || { flock(fd, arg) }).await?;
-    match res {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            if e == Errno::EWOULDBLOCK { // The lock isn't available yet. Let the client retry.
-                Err(io::Error::other("file is locked"))
-            } else {
-                Err(io::Error::other(e))
-            }
-        }
-    }
+    spawn_blocking(move || common::acquire_lock(fd, exclusive)).await?
 }
 
 async fn get_file(path: &str) -> io::Result<File> {
