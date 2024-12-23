@@ -171,6 +171,8 @@ use files::DATA_DIR;
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     std::env::set_var("RUST_LOG", "debug");
+    let host = std::env::var("HOST").unwrap_or("127.0.0.1".to_string());
+    let host = host.as_str();
     let mut cwd = std::env::current_dir()?;
     cwd.push(DATA_DIR);
     env_logger::init();
@@ -188,7 +190,7 @@ async fn main() -> std::io::Result<()> {
             .service(upload_subscribe)
             .service(upload_finish)
     })
-    .bind(("127.0.0.1", 7000))?
+    .bind((host, 7000))?
     .run()
     .await
 }
