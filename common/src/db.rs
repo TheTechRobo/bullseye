@@ -258,10 +258,13 @@ impl UploadRow {
         stream! {
             while let Ok(Some(changed)) = q.try_next().await {
                 if let Some(new_val) = changed.new_val {
-                    if let Ok(status) = serde_json::from_value(new_val) {
-                        self.status = status;
+                    let res: Result<Self, _> = serde_json::from_value(new_val);
+                    if let Ok(status) = res {
+                        self.status = status.status;
                         yield self.status.clone();
-                    }
+                    } /* else {
+                        dbg!(&res);
+                    } */
                 }
             }
         }
