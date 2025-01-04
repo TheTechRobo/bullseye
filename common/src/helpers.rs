@@ -17,5 +17,5 @@ pub struct MegawarcTarget {
 #[derive(Serialize, Deserialize)]
 pub struct MegawarcMetadata {
     pub target: MegawarcTarget,
-    upload_details: Option<UploadRow>,
+    pub upload_details: Option<UploadRow>,
 }
