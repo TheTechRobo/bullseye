@@ -76,12 +76,8 @@ pub struct UploadRow {
     pub(crate) pipeline: String,
     pub(crate) project: String,
 
-    /** If true, the upload is actively being processed.
-     * A processor can die without setting this to false,
-     * so a separate task should be run which occasionally
-     * checks for unlocked files and sets their `processing`
-     * flag to false.
-     **/
+    /// If true, the upload is actively being processed.
+    /// This might still be true if the processor died.
     pub(crate) processing: bool,
 
     pub(crate) metadata: Metadata,

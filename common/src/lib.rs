@@ -10,6 +10,8 @@ pub mod data;
 #[cfg(feature = "db")]
 pub mod db;
 pub mod payloads;
+#[cfg(feature = "db")]
+pub mod helpers;
 
 pub fn hash_file<T: io::Read>(mut file: T) -> io::Result<String> {
     let mut hasher = Sha256::new();
