@@ -9,7 +9,7 @@ RUN apk add --no-cache musl-dev pkgconfig protobuf-dev
 WORKDIR /usr/src/myapp
 COPY . bullseye
 WORKDIR /usr/src/myapp/bullseye/server
-RUN cargo install --path . --profile dev
+RUN cargo install --path .
 
 FROM scratch
 
