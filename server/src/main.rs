@@ -13,7 +13,7 @@ mod files;
 
 #[get("/")]
 async fn slash() -> impl Responder {
-    HttpResponse::Ok().body("Did you know? This server has more than 1MB of RAM!")
+    HttpResponse::Ok().body("no shenanigans please >:(")
 }
 
 type NewUploadResp = ErrorablePayload<NewUploadResponse>;
@@ -161,6 +161,10 @@ async fn upload_finish(conn: web::Data<SharedCtx>, path: web::Path<String>) -> i
     resp.to_response(HttpResponse::Accepted())
 }
 
+async fn route_not_found(req: HttpRequest) -> HttpResponse {
+    HttpResponse::NotFound().body(format!("I have a feeling you're doing shenanigans. req url {}", req.uri()))
+}
+
 struct SharedCtx {
     pool: DatabaseHandle,
     cwd: PathBuf,
@@ -189,6 +193,7 @@ async fn main() -> std::io::Result<()> {
             .service(put_upload_chunk)
             .service(upload_subscribe)
             .service(upload_finish)
+            .default_service(web::to(route_not_found))
     })
     .bind((host, 7000))?
     .run()
