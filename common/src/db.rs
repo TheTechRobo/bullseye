@@ -304,10 +304,23 @@ pub struct DatabaseHandle {
     pub(crate) pool: PoolWrapper,
 }
 
+macro_rules! cfg_from_env {
+    ($cfg:expr, $env:literal, $dest:ident) => {
+        if let Ok(new_val) = std::env::var($env) {
+            $cfg = $cfg.$dest(new_val);
+        }
+    }
+}
+
 impl DatabaseHandle {
     /// Creates a new connection pool.
     pub fn new() -> Result<Self, String> {
-        let cfg = unreql::cmd::connect::Options::default();
+        let mut cfg = unreql::cmd::connect::Options::default();
+        cfg_from_env!(cfg, "RETHINKDB_HOST", host);
+        // todo: parse string for RETHINKDB_PORT
+        // cfg_from_env!(cfg, "RETHINKDB_PORT", port);
+        cfg_from_env!(cfg, "RETHINKDB_USER", user);
+        cfg_from_env!(cfg, "RETHINKDB_PASSWORD", password);
         let manager = unreql_deadpool::SessionManager::new(cfg);
         let pool = deadpool::managed::Pool::builder(manager)
             .max_size(4)
